@@ -3,6 +3,7 @@ require('dotenv').config({ path: path.resolve(__dirname, "./secret.env")});
 const { WebClient } = require('@slack/web-api');
 const { createEventAdapter } = require('@slack/events-api');
 const moment = require("moment");
+const momentTz = require("moment-timezone");
 
 const slackEvents = createEventAdapter(process.env.SIGNING_SECRET);
 const port = process.env.PORT || 3000;
@@ -19,21 +20,19 @@ slackEvents.on('message', async (event) => {
     const {text, user, channel, team, bot_id} = event;
     if ( bot_id ) return;
     if (!hasTimeString(text)) return;
-
     // get all users and their timezones in this team
     const users = await web.users.list({ team });
     const timezones = users.members.filter((member) => !(member.id === user))
         .map((user) => ({ offset: user.tz_offset / 60, label: user.tz_label}))
     const sender = users.members.find(member => member.id === user);
+    // Sets the default timezone of the server to that of the message sender
+    momentTz.tz.setDefault(sender.tz);
     const timeString = normalizeTime(parseTime(text));
-
     const parsedTime = moment(timeString, 'h:mm A');
-    if (!parsedTime.isValid()) return;
-    
+    if (!parsedTime.isValid()) return;  
     const uniqueArray = Array.from(new Set(timezones.map(JSON.stringify))).map(JSON.parse);
     uniqueArray.forEach((timezoneInfo) => {
         const timeResponse = moment(parsedTime).utcOffset(timezoneInfo.offset).format("YYYY-MM-DD h:mm A");
-        console.log(timeResponse);
         web.chat.postMessage({ channel,
              text: `*${timeString}* is *${timeResponse} in ${timezoneInfo.label}*.`, 
              asUser: false, 
